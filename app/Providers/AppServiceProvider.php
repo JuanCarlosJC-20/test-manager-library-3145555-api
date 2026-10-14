@@ -2,6 +2,17 @@
 
 namespace App\Providers;
 
+use App\Adapters\Outbound\Persistence\EloquentUserRepository;
+use App\Adapters\Outbound\Security\BcryptPasswordHasher;
+use App\Adapters\Outbound\Security\JwtTokenService;
+use App\Adapters\Outbound\Support\SystemClock;
+use App\Adapters\Outbound\Support\UuidGenerator;
+use App\Application\Contracts\Clock;
+use App\Application\Contracts\IdGenerator;
+use App\Application\Contracts\PasswordHasher;
+use App\Application\Contracts\TokenIssuer;
+use App\Application\Contracts\TokenVerifier;
+use App\Application\Contracts\UserRepository;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -11,14 +22,15 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
-    }
-
-    /**
-     * Bootstrap any application services.
-     */
-    public function boot(): void
-    {
-        //
+        $this->app->bind(UserRepository::class, EloquentUserRepository::class);
+        $this->app->singleton(Clock::class, SystemClock::class);
+        $this->app->singleton(IdGenerator::class, UuidGenerator::class);
+        $this->app->singleton(PasswordHasher::class, BcryptPasswordHasher::class);
+        $this->app->singleton(JwtTokenService::class, fn ($app) => new JwtTokenService(
+            $app->make(Clock::class),
+            config('jwt.secret'),
+        ));
+        $this->app->alias(JwtTokenService::class, TokenIssuer::class);
+        $this->app->alias(JwtTokenService::class, TokenVerifier::class);
     }
 }
