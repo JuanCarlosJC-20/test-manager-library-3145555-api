@@ -26,6 +26,10 @@ final readonly class Book
             throw new InvalidArgumentException('El título es obligatorio y admite hasta 250 caracteres.');
         }
 
+        if (trim($author) === '' || mb_strlen(trim($author)) > 200) {
+            throw new InvalidArgumentException('El autor es obligatorio y admite hasta 200 caracteres.');
+        }
+
         if ($totalCopies < 1 || $availableCopies < 0 || $availableCopies > $totalCopies) {
             throw new InvalidArgumentException('Las cantidades de ejemplares no son válidas.');
         }

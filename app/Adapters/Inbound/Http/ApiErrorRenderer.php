@@ -2,9 +2,13 @@
 
 namespace App\Adapters\Inbound\Http;
 
+use App\Application\Exceptions\BookHasOpenLoans;
+use App\Application\Exceptions\BookNotFound;
 use App\Application\Exceptions\InvalidCredentials;
 use App\Application\Exceptions\InvalidToken;
+use App\Application\Exceptions\IsbnTaken;
 use App\Application\Exceptions\UsernameTaken;
+use App\Domain\Books\CopyLimitExceeded;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -32,6 +36,24 @@ final class ApiErrorRenderer
 
         if ($exception instanceof UsernameTaken) {
             return self::error(409, 'USERNAME_TAKEN', 'Ese nombre de usuario ya está registrado.');
+        }
+
+        if ($exception instanceof IsbnTaken) {
+            return self::error(409, 'ISBN_TAKEN', 'El ISBN ya está asociado a un libro activo.');
+        }
+
+        if ($exception instanceof BookHasOpenLoans) {
+            return self::error(409, 'BOOK_HAS_OPEN_LOANS', 'El libro tiene préstamos sin devolver.');
+        }
+
+        if ($exception instanceof BookNotFound) {
+            return self::error(404, 'NOT_FOUND', 'No se encontró el libro solicitado.');
+        }
+
+        if ($exception instanceof CopyLimitExceeded) {
+            return self::error(422, 'VALIDATION_ERROR', 'Los datos enviados no son válidos.', [
+                ['field' => 'total_copies', 'issue' => 'no puede ser menor que los ejemplares prestados'],
+            ]);
         }
 
         if ($exception instanceof ValidationException) {
