@@ -4,14 +4,17 @@ namespace Tests\Feature;
 
 use App\Application\Contracts\BookRepository;
 use App\Application\Contracts\CategoryRepository;
+use App\Application\Contracts\CoverStorage;
 use App\Application\Contracts\IdGenerator;
 use App\Application\Contracts\TokenVerifier;
+use App\Application\Data\StoredCover;
 use App\Application\Data\TokenClaims;
 use App\Application\Exceptions\IsbnTaken;
 use App\Domain\Books\Book;
 use App\Domain\Books\Isbn;
 use App\Domain\Users\Role;
 use DateTimeImmutable;
+use Illuminate\Http\UploadedFile;
 use Mockery;
 use Tests\TestCase;
 
@@ -96,5 +99,47 @@ class BookApiTest extends TestCase
             'title' => 'Libro', 'author' => 'Autor', 'isbn' => '9780307474728',
             'category_id' => '11111111-1111-4111-8111-111111111111', 'total_copies' => 1,
         ])->assertStatus(409)->assertJsonPath('code', 'ISBN_TAKEN');
+    }
+
+    public function test_cover_upload_stores_validated_image_and_returns_no_content(): void
+    {
+        $this->authenticateAsAdmin();
+        $book = new Book('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Libro', 'Autor', new Isbn('9780307474728'), 'category-id', 1, 1);
+        $books = Mockery::mock(BookRepository::class);
+        $books->shouldReceive('findActive')->once()->with($book->id)->andReturn($book);
+        $books->shouldReceive('updateCoverKey')->once()->with($book->id, 'opaque-cover.jpg')->andReturnTrue();
+        $this->app->instance(BookRepository::class, $books);
+        $coverStorage = Mockery::mock(CoverStorage::class);
+        $coverStorage->shouldReceive('store')->once()->with(Mockery::type('string'), 'image/jpeg')->andReturn('opaque-cover.jpg');
+        $this->app->instance(CoverStorage::class, $coverStorage);
+        $jpeg = base64_decode('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABAf/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPxB//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPxB//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxB//9k=', true);
+
+        $this->withToken('admin-token')->put('/api/v1/books/'.$book->id.'/cover', [
+            'file' => UploadedFile::fake()->createWithContent('cover.jpg', $jpeg),
+        ])->assertNoContent();
+    }
+
+    public function test_cover_upload_rejects_content_that_is_not_jpeg_or_png(): void
+    {
+        $this->authenticateAsAdmin();
+
+        $this->withToken('admin-token')->put('/api/v1/books/11111111-1111-4111-8111-111111111111/cover', [
+            'file' => UploadedFile::fake()->createWithContent('fake.jpg', 'not an image'),
+        ])->assertUnprocessable()->assertJsonPath('code', 'VALIDATION_ERROR');
+    }
+
+    public function test_cover_retrieval_returns_image_bytes_and_content_type(): void
+    {
+        $this->authenticateAsAdmin();
+        $book = new Book('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Libro', 'Autor', new Isbn('9780307474728'), 'category-id', 1, 1, 'opaque-cover.png');
+        $books = Mockery::mock(BookRepository::class);
+        $books->shouldReceive('findActive')->once()->with($book->id)->andReturn($book);
+        $storage = Mockery::mock(CoverStorage::class);
+        $storage->shouldReceive('retrieve')->once()->with('opaque-cover.png')->andReturn(new StoredCover('image-bytes', 'image/png'));
+        $this->app->instance(BookRepository::class, $books);
+        $this->app->instance(CoverStorage::class, $storage);
+
+        $this->withToken('admin-token')->get('/api/v1/books/'.$book->id.'/cover')
+            ->assertOk()->assertHeader('Content-Type', 'image/png')->assertContent('image-bytes');
     }
 }

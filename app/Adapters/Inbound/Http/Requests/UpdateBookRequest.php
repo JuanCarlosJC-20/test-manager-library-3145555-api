@@ -18,6 +18,7 @@ final class UpdateBookRequest extends FormRequest
             'author' => ['required', 'string', 'max:200'],
             'category_id' => ['required', 'uuid'],
             'total_copies' => ['required', 'integer', 'min:1'],
+            'isbn' => ['prohibited'],
         ];
     }
 }

@@ -13,7 +13,9 @@ Laravel API for Manager Library. The implementation follows the reviewed specifi
 1. Install PHP dependencies with `composer install`.
 2. Copy `.env.example` to `.env` and configure the PostgreSQL connection, JWT secret, initial administrator credentials, frontend origin, and cover-storage settings.
 3. Generate the Laravel application key with `php artisan key:generate`.
-4. Run the application with `php artisan serve`.
+4. Apply the database schema with `php artisan migrate`.
+5. Provision the configured administrator with `php artisan library:provision-admin`. The command is idempotent and reads credentials from the environment without printing them.
+6. Run the application with `php artisan serve`.
 
 The public health endpoint is `GET /health`. Versioned API routes use the `/api/v1` base path. Migrations own all application tables and the fixed category seed; the database service is expected to start empty.
 

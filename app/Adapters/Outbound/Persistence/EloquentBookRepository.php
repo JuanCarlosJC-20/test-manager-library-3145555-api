@@ -4,6 +4,7 @@ namespace App\Adapters\Outbound\Persistence;
 
 use App\Application\Contracts\BookRepository;
 use App\Application\Exceptions\IsbnTaken;
+use App\Application\Exceptions\InvalidCategory;
 use App\Domain\Books\Book;
 use App\Domain\Books\Isbn;
 use DateTimeImmutable;
@@ -18,10 +19,10 @@ final class EloquentBookRepository implements BookRepository
             ->whereNull('books.deleted_at');
 
         if ($query !== null && trim($query) !== '') {
-            $term = '%'.str_replace(['%', '_'], ['\\%', '\\_'], trim($query)).'%';
+            $term = '%'.trim($query).'%';
             $builder->where(function ($where) use ($term): void {
-                $where->whereRaw("books.title ILIKE ? ESCAPE '\\\\'", [$term])
-                    ->orWhereRaw("books.author ILIKE ? ESCAPE '\\\\'", [$term]);
+                $where->where('books.title', 'ILIKE', $term)
+                    ->orWhere('books.author', 'ILIKE', $term);
             });
         }
 
@@ -57,6 +58,9 @@ final class EloquentBookRepository implements BookRepository
             if ($exception->getCode() === '23505') {
                 throw new IsbnTaken('El ISBN ya está asociado a un libro activo.');
             }
+            if ($exception->getCode() === '23503') {
+                throw new InvalidCategory('La categoría solicitada no existe.');
+            }
 
             throw $exception;
         }
@@ -66,32 +70,64 @@ final class EloquentBookRepository implements BookRepository
 
     public function update(Book $book): Book
     {
-        try {
-            $updated = DB::table('books')->where('id', $book->id)->whereNull('deleted_at')->update(self::attributes($book));
-        } catch (QueryException $exception) {
-            if ($exception->getCode() === '23505') {
-                throw new IsbnTaken('El ISBN ya está asociado a un libro activo.');
+        return DB::transaction(function () use ($book): Book {
+            $currentRow = DB::table('books')->where('id', $book->id)->whereNull('deleted_at')->lockForUpdate()->first();
+            if ($currentRow === null) {
+                throw new \App\Application\Exceptions\BookNotFound('No se encontró el libro.');
             }
 
-            throw $exception;
-        }
+            $current = self::entity($currentRow);
+            $adjusted = $current->adjustTotalCopies($book->totalCopies);
+            $updatedBook = new Book($book->id, $book->title, $book->author, $book->isbn, $book->categoryId,
+                $adjusted->totalCopies, $adjusted->availableCopies, $current->coverKey);
 
-        if ($updated === 0) {
-            throw new \RuntimeException('No se pudo actualizar el libro.');
-        }
+            try {
+                DB::table('books')->where('id', $book->id)->update([
+                    'title' => $updatedBook->title,
+                    'author' => trim($updatedBook->author),
+                    'isbn' => $updatedBook->isbn->value,
+                    'category_id' => $updatedBook->categoryId,
+                    'total_copies' => $updatedBook->totalCopies,
+                    'available_copies' => $updatedBook->availableCopies,
+                ]);
+            } catch (QueryException $exception) {
+                if ($exception->getCode() === '23505') {
+                    throw new IsbnTaken('El ISBN ya está asociado a un libro activo.');
+                }
+                if ($exception->getCode() === '23503') {
+                    throw new InvalidCategory('La categoría solicitada no existe.');
+                }
 
-        return $book;
+                throw $exception;
+            }
+
+            return $updatedBook;
+        });
     }
 
-    public function hasOpenLoans(string $bookId): bool
+    public function updateCoverKey(string $bookId, ?string $coverKey): bool
     {
-        return DB::table('loan_items')->where('book_id', $bookId)->whereNull('returned_at')->exists();
+        return DB::table('books')->where('id', $bookId)->whereNull('deleted_at')
+            ->update(['cover_key' => $coverKey]) > 0;
     }
 
     public function softDelete(Book $book): void
     {
-        DB::table('books')->where('id', $book->id)->whereNull('deleted_at')
-            ->update(['deleted_at' => $book->deletedAt?->format('Y-m-d H:i:s.uP')]);
+        DB::transaction(function () use ($book): void {
+            $row = DB::table('books')->where('id', $book->id)->whereNull('deleted_at')->lockForUpdate()->first();
+            if ($row === null) {
+                throw new \App\Application\Exceptions\BookNotFound('No se encontró el libro.');
+            }
+
+            $hasOpenLoans = DB::table('loan_items')->where('book_id', $book->id)->whereNull('returned_at')->exists();
+            if ($hasOpenLoans) {
+                throw new \App\Application\Exceptions\BookHasOpenLoans('El libro tiene préstamos sin devolver.');
+            }
+
+            DB::table('books')->where('id', $book->id)->update([
+                'deleted_at' => $book->deletedAt?->format('Y-m-d H:i:s.uP'),
+            ]);
+        });
     }
 
     private static function attributes(Book $book): array

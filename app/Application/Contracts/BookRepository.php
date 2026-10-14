@@ -15,7 +15,7 @@ interface BookRepository
 
     public function update(Book $book): Book;
 
-    public function hasOpenLoans(string $bookId): bool;
+    public function updateCoverKey(string $bookId, ?string $coverKey): bool;
 
     public function softDelete(Book $book): void;
 }
