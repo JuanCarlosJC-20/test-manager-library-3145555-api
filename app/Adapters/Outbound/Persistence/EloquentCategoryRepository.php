@@ -13,4 +13,11 @@ final class EloquentCategoryRepository implements CategoryRepository
             ->map(static fn (object $row): array => ['id' => (string) $row->id, 'name' => $row->name])
             ->all();
     }
+
+    public function findName(string $id): ?string
+    {
+        $name = DB::table('categories')->where('id', $id)->value('name');
+
+        return $name === null ? null : (string) $name;
+    }
 }

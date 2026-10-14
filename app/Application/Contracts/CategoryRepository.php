@@ -6,4 +6,6 @@ interface CategoryRepository
 {
     /** @return list<array{id: string, name: string}> */
     public function listAll(): array;
+
+    public function findName(string $id): ?string;
 }
