@@ -2,11 +2,13 @@
 
 namespace App\Providers;
 
+use App\Adapters\Outbound\Persistence\EloquentCategoryRepository;
 use App\Adapters\Outbound\Persistence\EloquentUserRepository;
 use App\Adapters\Outbound\Security\BcryptPasswordHasher;
 use App\Adapters\Outbound\Security\JwtTokenService;
 use App\Adapters\Outbound\Support\SystemClock;
 use App\Adapters\Outbound\Support\UuidGenerator;
+use App\Application\Contracts\CategoryRepository;
 use App\Application\Contracts\Clock;
 use App\Application\Contracts\IdGenerator;
 use App\Application\Contracts\PasswordHasher;
@@ -23,6 +25,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(UserRepository::class, EloquentUserRepository::class);
+        $this->app->bind(CategoryRepository::class, EloquentCategoryRepository::class);
         $this->app->singleton(Clock::class, SystemClock::class);
         $this->app->singleton(IdGenerator::class, UuidGenerator::class);
         $this->app->singleton(PasswordHasher::class, BcryptPasswordHasher::class);

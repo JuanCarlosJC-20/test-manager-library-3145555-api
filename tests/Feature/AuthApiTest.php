@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Application\Contracts\CategoryRepository;
 use App\Application\Contracts\IdGenerator;
 use App\Application\Contracts\PasswordHasher;
 use App\Application\Contracts\TokenIssuer;
@@ -136,5 +137,27 @@ class AuthApiTest extends TestCase
         ])->assertUnprocessable()
             ->assertJsonPath('code', 'VALIDATION_ERROR')
             ->assertJsonPath('details.0.field', 'role');
+    }
+
+    public function test_authenticated_user_can_list_categories_in_name_order(): void
+    {
+        $verifier = Mockery::mock(TokenVerifier::class);
+        $verifier->shouldReceive('verify')->once()->with('librarian-token')->andReturn(
+            new TokenClaims('librarian-id', Role::Librarian, new DateTimeImmutable('+1 hour')),
+        );
+        $categories = Mockery::mock(CategoryRepository::class);
+        $categories->shouldReceive('listAll')->once()->andReturn([
+            ['id' => 'science-id', 'name' => 'Ciencia'],
+            ['id' => 'history-id', 'name' => 'Historia'],
+        ]);
+        $this->app->instance(TokenVerifier::class, $verifier);
+        $this->app->instance(CategoryRepository::class, $categories);
+
+        $this->withToken('librarian-token')->getJson('/api/v1/categories')
+            ->assertOk()
+            ->assertExactJson([
+                ['id' => 'science-id', 'name' => 'Ciencia'],
+                ['id' => 'history-id', 'name' => 'Historia'],
+            ]);
     }
 }
